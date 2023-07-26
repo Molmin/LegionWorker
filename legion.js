@@ -1,6 +1,6 @@
 const superagent = require('superagent');
 const { readFileSync, writeFileSync } = require('fs');
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms)), SLEEP = 300;
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms)), SLEEP = 1000, RATING_SLEEP = 100;
 const { getColor, Colors } = require('./color.js');
 
 const Tip = `## 祝贺：本帖成为本域中首个超过 100 用户查看的帖子，且一直保持全域查看数量最高！
@@ -46,7 +46,7 @@ const Tip = `## 祝贺：本帖成为本域中首个超过 100 用户查看的�
     设比赛/作业/训练参与的人的 UID 组成的集合为 $S$, $\\operatorname{score}_{c} x$ 表示 UID 为 $x$ 的人在 $c$ 比赛/作业/训练中的得分, 则在这场比赛/作业/训练中, UID 为 $p$ 的人的表现为:
 
     $$
-    \operatorname{perf}_c x = F\\left(\\dfrac{|S| \\cdot \\operatorname{score}_c x}{ \\sum_{s \\in S} \\operatorname{score}_c s} \\right)^P.
+    \\operatorname{perf}_c x = F\\left(\\dfrac{|S| \\cdot \\operatorname{score}_c x}{ \\sum_{s \\in S} \\operatorname{score}_c s} \\right)^P.
     $$
 
     其中对于比赛, $F = 2, P = 50$, 对于作业/训练, $F=1.5,P=120$.
@@ -65,7 +65,7 @@ const Tip = `## 祝贺：本帖成为本域中首个超过 100 用户查看的�
 
     $$
     \\begin{aligned}
-    r_i(x) = \\dfrac{|T_i|^{0.5} \\sum_{t \\in T_i} M(t) \\operatorname{perf}_t x}{|S_i|^{1.5}},
+    r_i(x) = \\dfrac{|T_i|^{0.25} \\sum_{t \\in T_i} M(t) \\operatorname{perf}_t x}{|S_i|^{1.25}},
     \\end{aligned}
     $$
 
@@ -174,7 +174,10 @@ async function getRanking() {
 function calcLegionRating() {
   for (var legionId in DATA.legion) {
     var legion = DATA.legion[legionId];
-    var totalMember = 0, RP = { sum: 0, contest: 0, practice: 0, rank: 0 }, id;
+    var totalMember = 0, RP = {
+      sum: 0, contest: 0, practice: 0, rank: 0,
+      medal: { gold: 0, silver: 0, bronze: 0 }
+    }, id;
     for (var member of legion.member)
       if (users[String(member)] && users[String(member)].rpSum >= 60) totalMember++;
 
@@ -211,6 +214,10 @@ function calcLegionRating() {
     for (var member of legion.member) {
       if (users[String(member)] && users[String(member)].rpSum >= 60)
         RP.rank += users[String(member)].rp.rank.sum * id, id--;
+      if (users[String(member)])
+        RP.medal.gold += users[String(member)].rp.rank.gold,
+          RP.medal.silver += users[String(member)].rp.rank.silver,
+          RP.medal.bronze += users[String(member)].rp.rank.bronze;
     }
     RP.rank /= (1 + totalMember) * totalMember / 2;
 
@@ -255,12 +262,29 @@ async function publish(ratingMarkdown) {
     if (legion.notice.length > 0)
       md += `### 公告\n\n${legion.notice}\n\n`;
 
-    md += `### 军团水平\n\n| 参与计算总人数 | 综合水平 | 比赛水平 | 练习水平 | 加分 |\n`
-      + `| :-: | :-: | :-: | :-: | :-: |\n| ${legion.totalMember} | `
-      + `${(legion.rating.sum.toFixed(2))} [](sum) | `
-      + `${legion.rating.contest.toFixed(2)} [](contest) | `
-      + `${legion.rating.practice.toFixed(2)} [](practice) |`
-      + `${legion.rating.rank.toFixed(2)} [](rank) |\n\n`;
+    const rankColors = { gold: '#ebd511', silver: '#c5c5c5', bronze: '#c57534', none: '#ddd' };
+    md += `### 军团水平\n\n| 参与计算总人数 | 综合水平 | 比赛水平 | 练习水平 | 加分 | `
+      + `**<font color="${rankColors.gold}">金</font>** / `
+      + `**<font color="${rankColors.silver}">银</font>** / `
+      + `**<font color="${rankColors.bronze}">铜</font>** |\n`
+      + `| :-: | :-: | :-: | :-: | :-: | :-: |\n| ${legion.totalMember} | `
+      + `**<font color="${getColor(legion.rating.sum)}">`
+      + `${(legion.rating.sum.toFixed(2))}</font>** [](sum) | `
+      + `**<font color="${getColor(legion.rating.contest * 2)}">`
+      + `${legion.rating.contest.toFixed(2)}</font>** [](contest) | `
+      + `**<font color="${getColor(legion.rating.practice * 2)}">`
+      + `${legion.rating.practice.toFixed(2)}</font>** [](practice) |`
+      + `**<font color="${getColor(legion.rating.rank * 15)}">`
+      + `${legion.rating.rank.toFixed(2)}</font>** [](rank) | `
+      + (legion.rating.medal.gold
+        ? `**<font color="${rankColors.gold}">${legion.rating.medal.gold}</font>**`
+        : `<font color="${rankColors.none}">0</font>`)
+      + ' / ' + (legion.rating.medal.silver
+        ? `**<font color="${rankColors.silver}">${legion.rating.medal.silver}</font>**`
+        : `<font color="${rankColors.none}">0</font>`)
+      + ' / ' + (legion.rating.medal.bronze
+        ? `**<font color="${rankColors.bronze}">${legion.rating.medal.bronze}</font>**`
+        : `<font color="${rankColors.none}">0</font>`) + ` |\n\n`;
     md += `### 成员\n\n| 小组 | 成员 | Rating | 比赛分 | 练习分 | 加分 |\n| -: | :- | :-: | :-: | :-: | :-: |\n`;
     for (var member of legion.member) {
       if (!users[String(member)])
@@ -276,8 +300,8 @@ async function publish(ratingMarkdown) {
           + `${users[String(member)].rp.contest.toFixed(0)}</font> [](${member}#contest) | `
           + `<font color="${getColor(users[String(member)].rp.practice * 2)}">`
           + `${users[String(member)].rp.practice.toFixed(0)}</font> [](${member}#practice) |`
-          + `<font color="${getColor(users[String(member)].rp.rank.sum * 10)}">`
-          + `${users[String(member)].rp.rank.sum.toFixed(0)}</font> [](${member}#practice) |\n`;
+          + `<font color="${getColor(users[String(member)].rp.rank.sum * 15)}">`
+          + `${users[String(member)].rp.rank.sum.toFixed(0)}</font> [](${member}#rank) |\n`;
       }
     }
     Markdown += `${md}\n`;
@@ -302,16 +326,18 @@ async function publish(ratingMarkdown) {
       console.log(`Published!`);
     })
     .catch(err => console.log('Failed'));
-  await sleep(SLEEP);
-  await superagent
-    .post(`https://oj.hailiangedu.com/d/hlxly2022/discuss/64ad293a59e1ea388169b511`)
-    .set('Accept', `application/json`)
-    .set('Cookie', COOKIE)
-    .send({ content: ratingMarkdown, drid: '64b8a428877c608172353364', operation: 'edit_reply' })
-    .then(res => {
-      console.log(`Updated Ranking!`);
-    })
-    .catch(err => console.log('Failed'));
+  if (ratingMarkdown) {
+    await sleep(SLEEP);
+    await superagent
+      .post(`https://oj.hailiangedu.com/d/hlxly2022/discuss/64ad293a59e1ea388169b511`)
+      .set('Accept', `application/json`)
+      .set('Cookie', COOKIE)
+      .send({ content: ratingMarkdown, drid: '64b8a428877c608172353364', operation: 'edit_reply' })
+      .then(res => {
+        console.log(`Updated Ranking!`);
+      })
+      .catch(err => console.log('Failed'));
+  }
 }
 
 function rankingMarkdown() {
@@ -337,7 +363,7 @@ function rankingMarkdown() {
         + `${user.rp.contest.toFixed(0)}</font> [](${user.uid}#contest) / `
         + `<font color="${getColor(user.rp.practice * 2)}">`
         + `${user.rp.practice.toFixed(0)}</font> [](${user.uid}#practice) / `
-        + `<font color="${getColor(user.rp.rank.sum * 10)}">`
+        + `<font color="${getColor(user.rp.rank.sum * 15)}">`
         + `${user.rp.rank.sum.toFixed(0)}</font> [](${user.uid}#rank)`
         + ' / ' + (user.rp.rank.gold
           ? `**<font color="${rankColors.gold}">${user.rp.rank.gold}</font>**`
@@ -347,7 +373,7 @@ function rankingMarkdown() {
           : `<font color="${rankColors.none}">0</font>`)
         + ' / ' + (user.rp.rank.bronze
           ? `**<font color="${rankColors.bronze}">${user.rp.rank.bronze}</font>**`
-          : `<font color="${rankColors.none}">0</font>`) + '\n'
+          : `<font color="${rankColors.none}">0</font>`) + '\n';
   content += `\n</details>`;
   return content;
 }
@@ -499,7 +525,8 @@ async function check() {
 
 const WEEKLY_CONTESTS = [
   '64a7e5d659e1ea38815d1d11',
-  '64b164432723396d990b4afd'
+  '64b164432723396d990b4afd',
+  '64bab5f9877c6081723bff51'
 ], WEEKLY_CONTESTS_RATE = 5,
   groupLevel = { 入门班: 1, 普及班: 2, 普及转提高班: 3, 提高转省选班: 4 };
 async function updateRating() {
@@ -513,7 +540,7 @@ async function updateRating() {
   failed = true;
   while (failed) {
     failed = false;
-    await sleep(SLEEP);
+    await sleep(RATING_SLEEP);
     await superagent
       .get(`https://oj.hailiangedu.com/d/hlxly2022/domain/group`)
       .set('Accept', `application/json`)
@@ -538,7 +565,7 @@ async function updateRating() {
       })
       .catch(err => { console.log(err); if (err) failed = true; });
   }
-  for (var uid of [46]) users[String(uid)].group = 4;
+  // for (var uid of [46]) users[String(uid)].group = 4;
   for (var uid of [127, 79, 321]) users[String(uid)].group = 3;
   for (var uid of [177, 835]) users[String(uid)].group = 2;
 
@@ -547,7 +574,7 @@ async function updateRating() {
   failed = true;
   while (failed) {
     failed = false;
-    await sleep(SLEEP);
+    await sleep(RATING_SLEEP);
     var totalContest = { '1': 0, '2': 0, '3': 0, '4': 0 };
     await superagent
       .get(`https://oj.hailiangedu.com/d/hlxly2022/contest`)
@@ -566,7 +593,7 @@ async function updateRating() {
           var failed2 = true;
           while (failed2) {
             failed2 = false;
-            await sleep(SLEEP);
+            await sleep(RATING_SLEEP);
             await superagent
               .get(`https://oj.hailiangedu.com/d/hlxly2022/contest/${tdoc.docId}/scoreboard`)
               .set('Accept', `application/json`)
@@ -620,21 +647,22 @@ async function updateRating() {
       .catch(err => (console.log(`Failed`), err && (failed = true)));
   }
   for (var uid in users) {
-    users[uid].rp.contest /= totalContest[String(users[uid].group)],
-      users[uid].rp.contest *= Math.sqrt(users[uid].totalContest / totalContest[String(users[uid].group)]);
+    users[uid].rp.contest *= Math.pow(users[uid].totalContest, 0.25);
+    users[uid].rp.contest /= Math.pow(totalContest[String(users[uid].group)], 1.25);
     users[uid].rpSum = users[uid].rp.contest;
-    users[uid].rp.rank.sum += users[uid].rp.rank.gold * 4.8 * Math.sqrt(users[uid].group);
-    users[uid].rp.rank.sum += users[uid].rp.rank.silver * 2.4 * Math.sqrt(users[uid].group);
-    users[uid].rp.rank.sum += users[uid].rp.rank.bronze * 1.2 * Math.sqrt(users[uid].group);
+    users[uid].rp.rank.sum += users[uid].rp.rank.gold * 3 * Math.pow(users[uid].group, 0.8);
+    users[uid].rp.rank.sum += users[uid].rp.rank.silver * 2 * Math.pow(users[uid].group, 0.8);
+    users[uid].rp.rank.sum += users[uid].rp.rank.bronze * 1.2 * Math.pow(users[uid].group, 0.8);
     users[uid].rpSum += users[uid].rp.rank.sum;
   }
 
+  const SPECIAL_HOMEWORK = ['64bf3db7877c608172499585', '64bdbfcf877c60817244c9f5'];
   var totalHomework = { '1': 0, '2': 0, '3': 0, '4': 0 };
-  for (var pageId = 1; pageId <= 2; pageId++) {
+  for (var pageId = 1; pageId <= 3; pageId++) {
     failed = true;
     while (failed) {
       failed = false;
-      await sleep(SLEEP);
+      await sleep(RATING_SLEEP);
       await superagent
         .get(`https://oj.hailiangedu.com/d/hlxly2022/training`)
         .query({ page: pageId })
@@ -654,7 +682,7 @@ async function updateRating() {
             var failed2 = true;
             while (failed2) {
               failed2 = false;
-              await sleep(SLEEP);
+              await sleep(RATING_SLEEP);
               await superagent
                 .get(`https://oj.hailiangedu.com/d/hlxly2022/training/${tdoc.docId}/scoreboard`)
                 .set('Accept', `application/json`)
@@ -680,7 +708,7 @@ async function updateRating() {
                     else for (var i = 1; i <= 4; i++)
                       totalHomework[String(i)]++;
                     for (var uid in users) {
-                      users[uid].rp.practice += Math.pow(users[uid].tmp / (sumscore / totalPerson), 1.5) * 120;
+                      users[uid].rp.practice += Math.pow(users[uid].tmp / (sumscore / totalPerson), 1.2) * 110;
                       if (users[uid].tmp >= 1) users[uid].totalHomework++;
                     }
                   }
@@ -696,7 +724,7 @@ async function updateRating() {
     failed = true;
     while (failed) {
       failed = false;
-      await sleep(SLEEP);
+      await sleep(RATING_SLEEP);
       await superagent
         .get(`https://oj.hailiangedu.com/d/hlxly2022/homework`)
         .query({ page: pageId })
@@ -708,14 +736,15 @@ async function updateRating() {
               new Date('2023-07-03').getTime()) continue;
             var group = groupLevel[tdoc.assign[0]];
             if (tdoc.docId == '64a8e12559e1ea3881605be4'
-              || tdoc.docId == '64b214512723396d990f8b92') group = -1;
+              || tdoc.docId == '64b214512723396d990f8b92'
+              || tdoc.docId == '64bb4a25877c60817240f138') group = -1;
             if (!group) continue;
             console.log(`Calculating Homework #${tdoc.docId}`);
 
             var failed2 = true;
             while (failed2) {
               failed2 = false;
-              await sleep(SLEEP);
+              await sleep(RATING_SLEEP);
               await superagent
                 .get(`https://oj.hailiangedu.com/d/hlxly2022/homework/${tdoc.docId}/scoreboard`)
                 .set('Accept', `application/json`)
@@ -741,7 +770,8 @@ async function updateRating() {
                     else for (var i = 1; i <= 4; i++)
                       totalHomework[String(i)]++;
                     for (var uid in users) {
-                      users[uid].rp.practice += Math.pow(users[uid].tmp / (sumscore / totalPerson), 1.5) * 120;
+                      if (SPECIAL_HOMEWORK.includes(tdoc.docId) && uid != 249) continue;
+                      users[uid].rp.practice += Math.pow(users[uid].tmp / (sumscore / totalPerson), 1.2) * 110;
                       if (users[uid].tmp >= 1) users[uid].totalHomework++;
                     }
                   }
@@ -754,8 +784,8 @@ async function updateRating() {
     }
   }
   for (var uid in users) {
-    users[uid].rp.practice /= totalHomework[String(users[uid].group)],
-      users[uid].rp.practice *= Math.sqrt(users[uid].totalHomework / totalHomework[String(users[uid].group)]);
+    users[uid].rp.practice *= Math.pow(users[uid].totalHomework, 0.25);
+    users[uid].rp.practice /= Math.pow(totalHomework[String(users[uid].group)], 1.25);
     users[uid].rpSum += users[uid].rp.practice;
   }
 
